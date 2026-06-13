@@ -20,11 +20,16 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Get Last Commit Message
+      - name: Get Last Commit Message Elements
         id: commit_info
         run: |
-          echo "msg<<EOF" >> $GITHUB_OUTPUT
-          git log -1 --pretty=%B >> $GITHUB_OUTPUT
+          # 1. Capture ONLY the single-line commit subject title
+          TITLE_RAW=$(git log -1 --pretty=%s)
+          echo "title_msg=$TITLE_RAW" >> $GITHUB_OUTPUT
+
+          # 2. Capture ONLY the body description paragraphs safely via an EOF multiline block
+          echo "desc_msg<<EOF" >> $GITHUB_OUTPUT
+          git log -1 --pretty=%b >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Cache LLM Model
@@ -59,7 +64,8 @@ jobs:
 
       - name: Generate AI Output via llama.cpp
         env:
-          COMMIT_PROMPT: ${{ steps.commit_info.outputs.msg }}
+          COMMIT_TITLE: ${{ steps.commit_info.outputs.title_msg }}
+          COMMIT_DESC:  ${{ steps.commit_info.outputs.desc_msg }}
         run: |
           mkdir -p outputs
 
@@ -71,17 +77,19 @@ jobs:
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
 
+          # Custom structured conversational scaffolding mapping your exact text phrasing layout
           FULL_PROMPT="<start_of_turn>user
-          Follow the instructions:
+          We received a commit with title \"$COMMIT_TITLE\". 
+          In there they received the following prompt you must answer:
 
-          $COMMIT_PROMPT
+          $COMMIT_DESC
           <end_of_turn>
           <start_of_turn>model
           "
 
           echo "Running inference against prompt..."
 
-          # Restored your working configuration layout using llama-completion and -no-cnv
+          # Execution loop via standard working llama-completion configuration mapping
           ./bin/llama-completion \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
             --prompt "$FULL_PROMPT" \
