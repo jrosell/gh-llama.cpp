@@ -3,28 +3,27 @@ name: Llama Inference
 on:
   push:
     branches:
-      - main # Or your default branch
+      - main
     paths-ignore:
-      - 'outputs/**' # Prevents infinite loops when the runner pushes new files
+      - 'outputs/**'
 
 permissions:
-  contents: write # Crucial permission to allow pushing files back to the repo
+  contents: write
 
 jobs:
   process-prompt:
-    runs-on: ubuntu-latest # Standard 16GB RAM runner
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout Code
         uses: actions/checkout@v5
         with:
-          fetch-depth: 0 # Fetches history so git log can read the commit message
+          fetch-depth: 0
 
       - name: Get Last Commit Message
         id: commit_info
         run: |
           echo "msg<<EOF" >> $GITHUB_OUTPUT
-          # Capture the full subject AND body/description of the latest commit
           git log -1 --pretty=%B >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
@@ -33,49 +32,48 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./models
-          key: gemma-2b-it-gguf-v3 # Cached model folder
+          key: gemma-2b-it-gguf-v3
 
       - name: Download Small Quantized Model (Gemma 2B)
         if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
           mkdir -p ./models
-          # Downloads the open, un-gated Bartowski Q4_K_M quant of Gemma 2B It
           curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
             https://huggingface.co/Bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
 
-      - name: Install llama.cpp
+      - name: Download and Install Pre-compiled llama.cpp
         run: |
-          # Download and install using explicit BASH and Non-Interactive flag
-          NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-          brew install llama.cpp
+          mkdir -p ./bin
+          echo "Querying GitHub API for the latest llama.cpp release tag..."
+          
+          # Fetch the absolute newest tag dynamically (e.g., b9622)
+          LATEST_TAG=$(curl -sL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r ".tag_name")
+          echo "Targeting dynamic release asset: $LATEST_TAG"
+          
+          # Download and unpack the extracted files into the local bin directory
+          curl -L "https://github.com/ggml-org/llama.cpp/releases/download/${LATEST_TAG}/llama-${LATEST_TAG}-bin-ubuntu-x64.tar.gz" \
+            | tar -xz -C ./bin --strip-components=1
+          
+          # Enforce binary execution layout configurations
+          chmod +x ./bin/llama-cli
+          
+          # Quick output audit check
+          ./bin/llama-cli --version
 
       - name: Generate AI Output via llama.cpp
         env:
           COMMIT_PROMPT: ${{ steps.commit_info.outputs.msg }}
         run: |
-          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           mkdir -p outputs
 
-          # Safety check to ensure llama-completion installed correctly
-          if ! command -v llama-completion &> /dev/null; then
-            echo "Error: llama-completion could not be found or initialized via Homebrew."
-            exit 1
-          fi
-
-          # Verify the model file actually exists before running
           if [ ! -f "./models/gemma-2-2b-it-Q4_K_M.gguf" ]; then
-            echo "Error: Model file not found in ./models/ directory."
+            echo "Error: Model file missing."
             exit 1
           fi
 
-          # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
 
-          echo "Running inference against prompt..."
-
-          # Construct the full prompt securely, formatting the multi-line commit message
           FULL_PROMPT="<start_of_turn>user
           Take this entire commit message (including its title and body description) and expand it into a detailed technical log or action list:
 
@@ -84,17 +82,16 @@ jobs:
           <start_of_turn>model
           "
 
-          # Switched execution executable to llama-completion
-          # Added '-no-cnv' flag to ensure it runs once and exits cleanly
-          llama-completion \
+          echo "Running token generation processing loops..."
+
+          # Running binary execution directly via raw inputs strings
+          echo -e "$FULL_PROMPT" | ./bin/llama-cli \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
-            --prompt "$FULL_PROMPT" \
             -t 4 \
-            -n 256 \
-            -no-cnv | tee "$FILE_PATH"
+            -n 256 | tee "$FILE_PATH"
 
           echo ""
-          echo "Generated file: $FILE_PATH"
+          echo "Generated file safely located at: $FILE_PATH"
 
       - name: Commit and Push Markdown File
         uses: stefanzweifel/git-auto-commit-action@v5
