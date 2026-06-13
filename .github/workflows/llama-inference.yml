@@ -50,15 +50,12 @@ jobs:
           LATEST_TAG=$(curl -sL https://api.github.com/repos/ggml-org/llama.cpp/releases/latest | jq -r ".tag_name")
           echo "Targeting dynamic release asset: $LATEST_TAG"
           
-          # Download and unpack the extracted files into the local bin directory
+          # Download and unpack the archive assets directly into our execution folder
           curl -L "https://github.com/ggml-org/llama.cpp/releases/download/${LATEST_TAG}/llama-${LATEST_TAG}-bin-ubuntu-x64.tar.gz" \
             | tar -xz -C ./bin --strip-components=1
           
-          # Enforce binary execution layout configurations
-          chmod +x ./bin/llama-cli
-          
-          # Quick output audit check
-          ./bin/llama-cli --version
+          # Enforce execution rights on the exact target binary
+          chmod +x ./bin/llama-completion
 
       - name: Generate AI Output via llama.cpp
         env:
@@ -75,23 +72,25 @@ jobs:
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
 
           FULL_PROMPT="<start_of_turn>user
-          Take this entire commit message (including its title and body description) and expand it into a detailed technical log or action list:
+          Follow the instructions:
 
           $COMMIT_PROMPT
           <end_of_turn>
           <start_of_turn>model
           "
 
-          echo "Running token generation processing loops..."
+          echo "Running inference against prompt..."
 
-          # Running binary execution directly via raw inputs strings
-          echo -e "$FULL_PROMPT" | ./bin/llama-cli \
+          # Restored your working configuration layout using llama-completion and -no-cnv
+          ./bin/llama-completion \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
+            --prompt "$FULL_PROMPT" \
             -t 4 \
-            -n 256 | tee "$FILE_PATH"
+            -n 256 \
+            -no-cnv | tee "$FILE_PATH"
 
           echo ""
-          echo "Generated file safely located at: $FILE_PATH"
+          echo "Generated file: $FILE_PATH"
 
       - name: Commit and Push Markdown File
         uses: stefanzweifel/git-auto-commit-action@v5
