@@ -23,13 +23,9 @@ jobs:
       - name: Get Last Commit Message
         id: commit_info
         run: |
-          # Extracts the subject and body of the latest commit
-          RAW_MSG=$(git log -1 --pretty=%B)
-          echo "Captured Commit Message: $RAW_MSG"
-
-          # Sanitize text to prevent breaking multiline bash variables
           echo "msg<<EOF" >> $GITHUB_OUTPUT
-          echo "$RAW_MSG" >> $GITHUB_OUTPUT
+          # Capture the full subject AND body/description of the latest commit
+          git log -1 --pretty=%B >> $GITHUB_OUTPUT
           echo "EOF" >> $GITHUB_OUTPUT
 
       - name: Cache LLM Model
@@ -37,14 +33,13 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./models
-          key: gemma-2b-it-gguf-v1
+          key: gemma-2b-it-gguf-v3 # Incremented to clean up caches
 
       - name: Download Small Quantized Model (Gemma 2B)
         if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
           mkdir -p ./models
           # Downloads the open, un-gated Bartowski Q4_K_M quant of Gemma 2B It
-          # This avoids any 401 Unauthorized errors from gated repositories
           curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
             https://huggingface.co/Bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
 
@@ -68,17 +63,31 @@ jobs:
             exit 1
           fi
 
+          # Verify the model file actually exists before running
+          if [ ! -f "./models/gemma-2-2b-it-Q4_K_M.gguf" ]; then
+            echo "Error: Model file not found in ./models/ directory."
+            exit 1
+          fi
+
           # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
 
           echo "Running inference against prompt..."
 
+          # Construct the full prompt securely, formatting the multi-line commit message
+          FULL_PROMPT="<start_of_turn>user
+          Take this entire commit message (including its title and body description) and expand it into a detailed technical log or action list:
+
+          $COMMIT_PROMPT
+          <end_of_turn>
+          <start_of_turn>model
+          "
+
           # Run the llama-cli executable
-          # Throttled to 4 threads to completely avoid CPU lockup on the runner
           llama-cli \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
-            -p "<start_of_turn>user\nTake this commit message and expand it into a detailed technical log or action list: $COMMIT_PROMPT\n<end_of_turn>\n<start_of_turn>model\n" \
+            -p "$FULL_PROMPT" \
             -t 4 \
             -n 256 \
             --verbosity -1 > "$FILE_PATH"
