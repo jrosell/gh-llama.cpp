@@ -1,0 +1,86 @@
+name: Run AI on Commit Message
+on:
+  push:
+    branches:
+      - main # Or your default branch
+    paths-ignore:
+      - 'outputs/**' # Prevents infinite loops when the runner pushes new files
+
+permissions:
+  contents: write # Crucial permission to allow pushing files back to the repo
+
+jobs:
+  process-prompt:
+    runs-on: ubuntu-latest # Standard 16GB RAM runner
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches history so git log can read the commit message
+
+      - name: Get Last Commit Message
+        id: commit_info
+        run: |
+          # Extracts the subject and body of the latest commit
+          RAW_MSG=$(git log -1 --pretty=%B)
+          echo "Captured Commit Message: $RAW_MSG"
+          
+          # Sanitize text to prevent breaking multiline bash variables
+          echo "msg<<EOF" >> $GITHUB_OUTPUT
+          echo "$RAW_MSG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+
+      - name: Cache LLM Model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: ./models
+          key: gemma-2b-it-gguf-v1
+
+      - name: Download Small Quantized Model (Gemma 2B)
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./models
+          # Downloads a lightweight 4-bit quantized Gemma model (fits well in <4GB RAM)
+          curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
+            https://huggingface.co
+
+      - name: Install llama.cpp
+        run: |
+          # Install using Homebrew (fastest pre-compiled installation method on Linux runners)
+          sh -c "$(curl -fsSL https://githubusercontent.com)"
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          brew install llama.cpp
+
+      - name: Generate AI Output via llama.cpp
+        eval: |
+          /home/linuxbrew/.linuxbrew/bin/brew shellenv
+        env:
+          COMMIT_PROMPT: ${{ steps.commit_info.outputs.msg }}
+        run: |
+          eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+          mkdir -p outputs
+          
+          # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
+          TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
+          FILE_PATH="outputs/response_${TIMESTAMP}.md"
+          
+          echo "Running inference against prompt..."
+          
+          # Run the llama-cli executable
+          # Throttled to 4 threads to completely avoid CPU lockup on the runner
+          llama-cli \
+            -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
+            -p "<start_of_turn>user\nTake this commit message and expand it into a detailed technical log or action list: $COMMIT_PROMPT\n<end_of_turn>\n<start_of_turn>model\n" \
+            -t 4 \
+            -n 256 \
+            --quiet > "$FILE_PATH"
+            
+          echo "Generated file: $FILE_PATH"
+
+      - name: Commit and Push Markdown File
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "docs: add AI generated log from commit [skip ci]"
+          file_pattern: 'outputs/*.md'
