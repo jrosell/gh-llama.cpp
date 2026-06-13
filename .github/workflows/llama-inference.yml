@@ -1,55 +1,15 @@
-name: Llama Inference
-
-on:
-  push:
-    branches:
-      - main # Or your default branch
-    paths-ignore:
-      - 'outputs/**' # Prevents infinite loops when the runner pushes new files
-
-permissions:
-  contents: write # Crucial permission to allow pushing files back to the repo
-
-jobs:
-  process-prompt:
-    runs-on: ubuntu-latest # Standard 16GB RAM runner
-
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v5
-        with:
-          fetch-depth: 0 # Fetches history so git log can read the commit message
-
-      - name: Get Last Commit Message
-        id: commit_info
-        run: |
-          # Extracts the subject and body of the latest commit
-          RAW_MSG=$(git log -1 --pretty=%B)
-          echo "Captured Commit Message: $RAW_MSG"
-
-          # Sanitize text to prevent breaking multiline bash variables
-          echo "msg<<EOF" >> $GITHUB_OUTPUT
-          echo "$RAW_MSG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Cache LLM Model
-        id: cache-model
-        uses: actions/cache@v5
-        with:
-          path: ./models
-          key: gemma-2b-it-gguf-v1
-
-      - name: Download Small Quantized Model (Gemma 2B)
+- name: Download Small Quantized Model (Gemma 2B)
         if: steps.cache-model.outputs.cache-hit != 'true'
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p ./models
-          # Downloads a lightweight 4-bit quantized Gemma model (fits well in <4GB RAM)
-          curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
-            https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
+          # Downloads the official file using your repository secret token
+          curl -L -H "Authorization: Bearer $HF_TOKEN" -o ./models/2b_it_v2.gguf \
+            https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/2b_it_v2.gguf
 
       - name: Install llama.cpp
         run: |
-          # Download and install using explicit BASH and Non-Interactive flag
           NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install llama.cpp
@@ -61,32 +21,22 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           mkdir -p outputs
 
-          # Safety check to ensure llama-cli installed correctly
           if ! command -v llama-cli &> /dev/null; then
-            echo "Error: llama-cli could not be found or initialized via Homebrew."
+            echo "Error: llama-cli could not be found or initialized."
             exit 1
           fi
 
-          # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
 
           echo "Running inference against prompt..."
 
-          # Run the llama-cli executable
-          # Throttled to 4 threads to completely avoid CPU lockup on the runner
-          # Swapped --quiet out for --verbosity -1 to accommodate updated llama.cpp CLI guidelines
+          # Changed -m model name here to point to your specific v2 file name
           llama-cli \
-            -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
+            -m ./models/2b_it_v2.gguf \
             -p "<start_of_turn>user\nTake this commit message and expand it into a detailed technical log or action list: $COMMIT_PROMPT\n<end_of_turn>\n<start_of_turn>model\n" \
             -t 4 \
             -n 256 \
             --verbosity -1 > "$FILE_PATH"
 
           echo "Generated file: $FILE_PATH"
-
-      - name: Commit and Push Markdown File
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "docs: add AI generated log from commit [skip ci]"
-          file_pattern: 'outputs/*.md'
