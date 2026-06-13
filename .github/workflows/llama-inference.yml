@@ -1,4 +1,5 @@
-name: Run AI on Commit Message
+name: Llama Inference
+
 on:
   push:
     branches:
@@ -25,7 +26,7 @@ jobs:
           # Extracts the subject and body of the latest commit
           RAW_MSG=$(git log -1 --pretty=%B)
           echo "Captured Commit Message: $RAW_MSG"
-          
+
           # Sanitize text to prevent breaking multiline bash variables
           echo "msg<<EOF" >> $GITHUB_OUTPUT
           echo "$RAW_MSG" >> $GITHUB_OUTPUT
@@ -44,30 +45,28 @@ jobs:
           mkdir -p ./models
           # Downloads a lightweight 4-bit quantized Gemma model (fits well in <4GB RAM)
           curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
-            https://huggingface.co
+            https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
 
       - name: Install llama.cpp
         run: |
           # Install using Homebrew (fastest pre-compiled installation method on Linux runners)
-          sh -c "$(curl -fsSL https://githubusercontent.com)"
+          sh -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install llama.cpp
 
       - name: Generate AI Output via llama.cpp
-        eval: |
-          /home/linuxbrew/.linuxbrew/bin/brew shellenv
         env:
           COMMIT_PROMPT: ${{ steps.commit_info.outputs.msg }}
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           mkdir -p outputs
-          
+
           # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
           FILE_PATH="outputs/response_${TIMESTAMP}.md"
-          
+
           echo "Running inference against prompt..."
-          
+
           # Run the llama-cli executable
           # Throttled to 4 threads to completely avoid CPU lockup on the runner
           llama-cli \
@@ -76,7 +75,7 @@ jobs:
             -t 4 \
             -n 256 \
             --quiet > "$FILE_PATH"
-            
+
           echo "Generated file: $FILE_PATH"
 
       - name: Commit and Push Markdown File
