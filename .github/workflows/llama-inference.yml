@@ -33,7 +33,7 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ./models
-          key: gemma-2b-it-gguf-v3 # Incremented to clean up caches
+          key: gemma-2b-it-gguf-v3 # Cached model folder
 
       - name: Download Small Quantized Model (Gemma 2B)
         if: steps.cache-model.outputs.cache-hit != 'true'
@@ -85,13 +85,13 @@ jobs:
           "
 
           # Run the llama-cli executable
-          # Added '--no-cli' to completely prevent the model from opening an endless chat interface
+          # Added '--no-conversation' which explicitly disables the interactive REPL chat mode
           llama-cli \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
             -p "$FULL_PROMPT" \
             -t 4 \
             -n 256 \
-            --no-cli | tee "$FILE_PATH"
+            --no-conversation | tee "$FILE_PATH"
 
           echo ""
           echo "Generated file: $FILE_PATH"
