@@ -41,13 +41,12 @@ jobs:
 
       - name: Download Small Quantized Model (Gemma 2B)
         if: steps.cache-model.outputs.cache-hit != 'true'
-        env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: |
           mkdir -p ./models
-          # Downloads the official gated file using your repository secret token
-          curl -L -H "Authorization: Bearer $HF_TOKEN" -o ./models/2b_it_v2.gguf \
-            https://huggingface.co/google/gemma-2-2b-it-GGUF/resolve/main/2b_it_v2.gguf
+          # Downloads the open, un-gated Bartowski Q4_K_M quant of Gemma 2B It
+          # This avoids any 401 Unauthorized errors from gated repositories
+          curl -L -o ./models/gemma-2-2b-it-Q4_K_M.gguf \
+            https://huggingface.co/Bartowski/gemma-2-2b-it-GGUF/resolve/main/gemma-2-2b-it-Q4_K_M.gguf
 
       - name: Install llama.cpp
         run: |
@@ -75,9 +74,10 @@ jobs:
 
           echo "Running inference against prompt..."
 
-          # Run the llama-cli executable targeting the custom 2b_it_v2.gguf name
+          # Run the llama-cli executable
+          # Throttled to 4 threads to completely avoid CPU lockup on the runner
           llama-cli \
-            -m ./models/2b_it_v2.gguf \
+            -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
             -p "<start_of_turn>user\nTake this commit message and expand it into a detailed technical log or action list: $COMMIT_PROMPT\n<end_of_turn>\n<start_of_turn>model\n" \
             -t 4 \
             -n 256 \
