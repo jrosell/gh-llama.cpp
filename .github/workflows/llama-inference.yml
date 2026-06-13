@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: Checkout Code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5 # Upgraded to v5 for Node.js 24 support
         with:
           fetch-depth: 0 # Fetches history so git log can read the commit message
 
@@ -34,7 +34,7 @@ jobs:
 
       - name: Cache LLM Model
         id: cache-model
-        uses: actions/cache@v4
+        uses: actions/cache@v5 # Upgraded to v5 for Node.js 24 support
         with:
           path: ./models
           key: gemma-2b-it-gguf-v1
@@ -60,6 +60,12 @@ jobs:
         run: |
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           mkdir -p outputs
+
+          # Safety check to ensure llama-cli installed correctly
+          if ! command -v llama-cli &> /dev/null; then
+            echo "Error: llama-cli could not be found or initialized via Homebrew."
+            exit 1
+          fi
 
           # Generate file name using current timestamp (YYYYMMDD_HHMMSS)
           TIMESTAMP=$(date +'%Y%m%d_%H%M%S')
