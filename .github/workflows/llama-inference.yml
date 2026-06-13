@@ -85,13 +85,13 @@ jobs:
           "
 
           # Run the llama-cli executable
-          # Removed '--verbosity -1' so system diagnostics are visible
-          # Changed '>' to '| tee' to stream the text output live to the GitHub log
+          # Added '--no-cli' to completely prevent the model from opening an endless chat interface
           llama-cli \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
             -p "$FULL_PROMPT" \
             -t 4 \
-            -n 256 | tee "$FILE_PATH"
+            -n 256 \
+            --no-cli | tee "$FILE_PATH"
 
           echo ""
           echo "Generated file: $FILE_PATH"
