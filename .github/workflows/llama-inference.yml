@@ -49,7 +49,7 @@ jobs:
 
       - name: Install llama.cpp
         run: |
-          # Fixed line: changed 'sh -c' to 'NONINTERACTIVE=1 bash -c'
+          # Download and install using explicit BASH and Non-Interactive flag
           NONINTERACTIVE=1 bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           brew install llama.cpp
@@ -75,12 +75,13 @@ jobs:
 
           # Run the llama-cli executable
           # Throttled to 4 threads to completely avoid CPU lockup on the runner
+          # Swapped --quiet out for --verbosity -1 to accommodate updated llama.cpp CLI guidelines
           llama-cli \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
             -p "<start_of_turn>user\nTake this commit message and expand it into a detailed technical log or action list: $COMMIT_PROMPT\n<end_of_turn>\n<start_of_turn>model\n" \
             -t 4 \
             -n 256 \
-            --quiet > "$FILE_PATH"
+            --verbosity -1 > "$FILE_PATH"
 
           echo "Generated file: $FILE_PATH"
 
