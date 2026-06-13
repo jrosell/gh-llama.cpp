@@ -57,9 +57,9 @@ jobs:
           eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
           mkdir -p outputs
 
-          # Safety check to ensure llama-cli installed correctly
-          if ! command -v llama-cli &> /dev/null; then
-            echo "Error: llama-cli could not be found or initialized via Homebrew."
+          # Safety check to ensure llama-completion installed correctly
+          if ! command -v llama-completion &> /dev/null; then
+            echo "Error: llama-completion could not be found or initialized via Homebrew."
             exit 1
           fi
 
@@ -84,14 +84,14 @@ jobs:
           <start_of_turn>model
           "
 
-          # Run the llama-cli executable
-          # Added '--no-conversation' which explicitly disables the interactive REPL chat mode
-          llama-cli \
+          # Switched execution executable to llama-completion
+          # Added '-no-cnv' flag to ensure it runs once and exits cleanly
+          llama-completion \
             -m ./models/gemma-2-2b-it-Q4_K_M.gguf \
-            -p "$FULL_PROMPT" \
+            --prompt "$FULL_PROMPT" \
             -t 4 \
             -n 256 \
-            --no-conversation | tee "$FILE_PATH"
+            -no-cnv | tee "$FILE_PATH"
 
           echo ""
           echo "Generated file: $FILE_PATH"
